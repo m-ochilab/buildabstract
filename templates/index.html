@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BuildAbstract | 論文タイトル・アブストラクト推敲サービス</title>
+    <link rel="icon" type="image/png" href="/static/imagebuildabst.png?v={{ static_version }}" />
+    <link rel="stylesheet" href="/static/styles.css?v={{ static_version }}" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <p class="eyebrow">{{ "OpenRouter Revision Studio" if backend == "openrouter" else "Local LLM Revision Studio" }}</p>
+        <h1>論文タイトル・アブストラクト推敲サービス</h1>
+        <p class="lead">
+          情報工学全般のジャーナル論文を前提に、各項目を短文で入力しながら AI に推敲してもらうための画面です。最後に、全入力からタイトルとアブストラクト案をまとめて生成します。
+        </p>
+        <div class="status-panel">
+          <div>
+            <span class="status-label">接続状態</span>
+            <strong id="health-status">確認中...</strong>
+          </div>
+          <div>
+            <span class="status-label">利用モデル</span>
+            <strong id="fixed-model">{{ default_model }}</strong>
+          </div>
+          <div id="usage-panel" class="hidden">
+            <span class="status-label">推敲コスト合計</span>
+            <strong id="usage-total">—</strong>
+          </div>
+          <div id="credits-panel" class="hidden">
+            <span class="status-label">残クレジット</span>
+            <strong id="credits-remaining">—</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <section class="card">
+          <div class="card-header">
+            <h2>入力と項目別推敲</h2>
+            <p>各項目は短文で大丈夫です。右下のボタンで、その項目だけを AI に見せてフィードバックと修正候補を生成できます。</p>
+          </div>
+
+          <form id="generation-form" class="form">
+            <input type="hidden" name="model" value="{{ default_model }}" />
+
+            <div class="inline-fields">
+              <label>
+                <span>姓</span>
+                <input type="text" name="last_name" placeholder="山田" required />
+              </label>
+              <label>
+                <span>名</span>
+                <input type="text" name="first_name" placeholder="太郎" required />
+              </label>
+            </div>
+
+            <div class="inline-fields">
+              <label>
+                <span>利用バックエンド</span>
+                <select id="backend-select" name="backend">
+                  <option value="openrouter" {% if default_backend == "openrouter" %}selected{% endif %}>OpenRouter</option>
+                  <option value="ollama" {% if default_backend == "ollama" %}selected{% endif %}>Ollama</option>
+                </select>
+              </label>
+              <label>
+                <span>出力言語</span>
+                <select name="target_language">
+                  <option value="ja" selected>日本語</option>
+                  <option value="en">English</option>
+                </select>
+              </label>
+            </div>
+
+            <section class="input-section" data-field="background">
+              <label>
+                <span>背景</span>
+                <textarea name="background" rows="3" placeholder="研究背景を短く書いてください。"></textarea>
+              </label>
+              <div class="section-actions">
+                <button type="button" class="section-generate-btn" data-field="background">背景を推敲</button>
+              </div>
+              <div id="section-result-background" class="section-result hidden"></div>
+            </section>
+
+            <section class="input-section" data-field="problem">
+              <label>
+                <span>問題</span>
+                <textarea name="problem" rows="3" placeholder="背景の中で、何が問題なのかを短く書いてください。"></textarea>
+              </label>
+              <div class="section-actions">
+                <button type="button" class="section-generate-btn" data-field="problem">問題を推敲</button>
+              </div>
+              <div id="section-result-problem" class="section-result hidden"></div>
+            </section>
+
+            <section class="input-section" data-field="objective">
+              <label>
+                <span>この論文での目的</span>
+                <textarea name="objective" rows="3" placeholder="この論文で何を明らかにしたいかを書いてください。"></textarea>
+              </label>
+              <div class="section-actions">
+                <button type="button" class="section-generate-btn" data-field="objective">目的を推敲</button>
+              </div>
+              <div id="section-result-objective" class="section-result hidden"></div>
+            </section>
+
+            <section class="input-section" data-field="challenge">
+              <label>
+                <span>目的達成のために解決すべき課題</span>
+                <textarea name="challenge" rows="3" placeholder="目的を達成するために、どの課題を解く必要があるかを書いてください。"></textarea>
+              </label>
+              <div class="section-actions">
+                <button type="button" class="section-generate-btn" data-field="challenge">課題を推敲</button>
+              </div>
+              <div id="section-result-challenge" class="section-result hidden"></div>
+            </section>
+
+            <section class="input-section" data-field="methods">
+              <label>
+                <span>方法</span>
+                <textarea name="methods" rows="3" placeholder="使う手法、モデル、解析方法などを短く書いてください。"></textarea>
+              </label>
+              <div class="section-actions">
+                <button type="button" class="section-generate-btn" data-field="methods">方法を推敲</button>
+              </div>
+              <div id="section-result-methods" class="section-result hidden"></div>
+            </section>
+
+            <section class="input-section" data-field="experiment">
+              <label>
+                <span>実験</span>
+                <textarea name="experiment" rows="3" placeholder="評価方法、比較条件、対象データなどを書いてください。"></textarea>
+              </label>
+              <div class="section-actions">
+                <button type="button" class="section-generate-btn" data-field="experiment">実験を推敲</button>
+              </div>
+              <div id="section-result-experiment" class="section-result hidden"></div>
+            </section>
+
+            <section class="input-section" data-field="expected_results">
+              <label>
+                <span>想定される結果</span>
+                <textarea name="expected_results" rows="3" placeholder="どういう結果が期待されるかを短く書いてください。"></textarea>
+              </label>
+              <div class="section-actions">
+                <button type="button" class="section-generate-btn" data-field="expected_results">想定結果を推敲</button>
+              </div>
+              <div id="section-result-expected_results" class="section-result hidden"></div>
+            </section>
+
+            <section class="input-section" data-field="discussion">
+              <label>
+                <span>課題が解決されているかの考察</span>
+                <textarea name="discussion" rows="3" placeholder="結果から何が言えそうか、課題解決に近づくかを書いてください。"></textarea>
+              </label>
+              <div class="section-actions">
+                <button type="button" class="section-generate-btn" data-field="discussion">考察を推敲</button>
+              </div>
+              <div id="section-result-discussion" class="section-result hidden"></div>
+            </section>
+
+            <section class="input-section" data-field="conclusion">
+              <label>
+                <span>結論</span>
+                <textarea name="conclusion" rows="3" placeholder="この論文として最後にどう結ぶかを書いてください。"></textarea>
+              </label>
+              <div class="section-actions">
+                <button type="button" class="section-generate-btn" data-field="conclusion">結論を推敲</button>
+              </div>
+              <div id="section-result-conclusion" class="section-result hidden"></div>
+            </section>
+
+            <section class="input-section" data-field="contribution">
+              <label>
+                <span>貢献</span>
+                <textarea name="contribution" rows="3" placeholder="この研究の新規性や価値を短く書いてください。"></textarea>
+              </label>
+              <div class="section-actions">
+                <button type="button" class="section-generate-btn" data-field="contribution">貢献を推敲</button>
+              </div>
+              <div id="section-result-contribution" class="section-result hidden"></div>
+            </section>
+
+            <section class="guide-panel">
+              <span>推敲ガイド</span>
+              <p>分野は情報工学全般、論文種別はジャーナル、想定読者は学会査読者として固定し、以下のガイドをベースに推敲します。</p>
+              <pre>{{ guidance_text }}</pre>
+            </section>
+
+            <button type="submit" id="submit-button">入力内容からタイトルとアブストラクトを生成</button>
+          </form>
+        </section>
+
+        <section class="results-column">
+          <section class="card result-card">
+            <div class="card-header">
+              <h2>最終生成結果</h2>
+              <p>各項目を整えたあとに、入力全体からタイトルとアブストラクトをまとめて生成します。</p>
+            </div>
+            <div id="result-empty" class="empty-state">まだ最終生成されていません。</div>
+            <div id="result-progress" class="progress-panel hidden" aria-live="polite">
+              <div class="progress-topline">
+                <strong id="progress-title">最終生成を開始しています</strong>
+                <span id="progress-percent">0%</span>
+              </div>
+              <div class="progress-bar">
+                <div id="progress-fill" class="progress-fill"></div>
+              </div>
+              <p id="progress-stage" class="progress-stage">開始準備中...</p>
+              <div id="progress-queue-warn" class="queue-warn hidden">
+                <span class="queue-warn-icon">⏳</span>
+                <span id="progress-queue-text">AI スロットが空くのを待っています。</span>
+              </div>
+              <p id="progress-timeout-row" class="progress-timeout hidden"></p>
+              <ol id="progress-steps" class="progress-steps">
+                <li data-step="accepted">入力受け付け</li>
+                <li data-step="source">入力整理</li>
+                <li data-step="prompt">プロンプト準備</li>
+                <li data-step="llm">AI生成</li>
+                <li data-step="finalize">出力整形</li>
+                <li data-step="done">完了</li>
+              </ol>
+              <details id="llm-stream-panel" class="llm-stream-panel hidden">
+                <summary>LLM の出力（リアルタイム）</summary>
+                <pre id="llm-stream-output" class="llm-stream-output"></pre>
+              </details>
+            </div>
+
+            <div id="result-view" class="hidden">
+              <div class="download-row">
+                <a id="result-download" class="download-link" href="#" download>Markdown をダウンロード</a>
+                <span id="result-cost" class="result-cost hidden"></span>
+              </div>
+
+              <section class="hero-result">
+                <p class="result-label">Generated Title</p>
+                <h3 id="result-revised-title">—</h3>
+              </section>
+
+              <div class="result-block">
+                <h3>改稿アブストラクト</h3>
+                <article class="result-surface">
+                  <p id="result-revised-abstract" class="abstract-text"></p>
+                </article>
+              </div>
+
+              <div class="result-block">
+                <h3>評価スコア</h3>
+                <div class="score-summary-card">
+                  <div class="score-summary-head">
+                    <div>
+                      <p class="score-summary-label">判定</p>
+                      <strong id="result-pass-status">—</strong>
+                    </div>
+                    <div>
+                      <p class="score-summary-label">合格条件</p>
+                      <strong id="result-pass-threshold">全項目 7.5 点以上</strong>
+                    </div>
+                  </div>
+                  <p id="result-pass-description" class="score-summary-text"></p>
+                </div>
+                <div id="writing-club-action" class="writing-club-action hidden">
+                  <button type="button" id="writing-club-button" class="secondary-btn">論文執筆会に確認依頼を投稿</button>
+                  <p id="writing-club-status" class="writing-club-status"></p>
+                </div>
+                <div class="score-visual-grid">
+                  <div id="result-score-chart" class="score-chart" aria-label="評価レーダーチャート"></div>
+                  <div id="result-evaluation-list" class="stack"></div>
+                </div>
+              </div>
+
+              <div class="result-block">
+                <h3>項目別の総括フィードバック</h3>
+                <div id="result-section-feedback" class="stack"></div>
+              </div>
+
+              <div class="result-block">
+                <h3>アブストラクトへのコメント</h3>
+                <article class="result-surface">
+                  <p id="result-abstract-feedback" class="abstract-text"></p>
+                </article>
+              </div>
+
+              <div class="result-block">
+                <h3>キーワード</h3>
+                <div id="result-keywords" class="keyword-list"></div>
+              </div>
+
+              <div class="result-block">
+                <h3>全体メモ</h3>
+                <ul id="result-overall-notes"></ul>
+              </div>
+
+              <div class="result-block">
+                <h3>次に詰めるとよい点</h3>
+                <ul id="result-next-steps"></ul>
+              </div>
+
+              <div class="result-block">
+                <div class="result-block-head">
+                  <h3>改善用の更新案</h3>
+                  <button type="button" id="apply-all-updates" class="secondary-btn">すべて入力欄へ反映</button>
+                </div>
+                <div id="result-section-updates" class="stack"></div>
+              </div>
+            </div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <script src="/static/app.js?v={{ static_version }}"></script>
+  </body>
+</html>
