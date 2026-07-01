@@ -200,6 +200,8 @@ function renderWritingClubAction(passAll) {
     return;
   }
 
+  writingClubAction.classList.remove("is-ready", "is-unavailable");
+
   if (!latestPassAll) {
     writingClubAction.classList.add("hidden");
     writingClubButton.disabled = true;
@@ -208,10 +210,16 @@ function renderWritingClubAction(passAll) {
   }
 
   writingClubAction.classList.remove("hidden");
-  if (synologyChatConfigured) {
+  if (synologyChatConfigured && latestGenerationId) {
+    writingClubAction.classList.add("is-ready");
     writingClubButton.disabled = false;
     setWritingClubStatus("合格済みのため、この結果を論文執筆会へ投稿できます。", "muted");
+  } else if (!latestGenerationId) {
+    writingClubAction.classList.add("is-unavailable");
+    writingClubButton.disabled = true;
+    setWritingClubStatus("投稿対象の生成結果がまだ保存されていません。生成完了後に投稿できます。", "error");
   } else {
+    writingClubAction.classList.add("is-unavailable");
     writingClubButton.disabled = true;
     setWritingClubStatus("Synology Chat の webhook が未設定です。設定後に投稿できます。", "error");
   }
@@ -844,6 +852,9 @@ if (rescoreResultButton) {
     }
 
     const formData = new FormData(form);
+    if (latestGenerationId) {
+      formData.set("generation_id", String(latestGenerationId));
+    }
     formData.set("revised_title", revisedTitle);
     formData.set("revised_abstract", revisedAbstract);
 
@@ -854,6 +865,9 @@ if (rescoreResultButton) {
         method: "POST",
         body: formData,
       });
+      if (payload.generation_id) {
+        latestGenerationId = payload.generation_id;
+      }
       renderEvaluationSummary(payload.evaluation || [], payload.pass_threshold || 7.5, Boolean(payload.pass_all));
       renderWritingClubAction(Boolean(payload.pass_all));
       setRescoreStatus("編集後のタイトル・アブストラクトで採点を更新しました。", "success");

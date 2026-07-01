@@ -388,7 +388,12 @@ def build_generation_prompt(request_data: GenerationRequest, guidance_text: str)
 - feedback は短く具体的に書く。
 - revision_candidate は、元の意図をできるだけ保ちながら、学術文脈で自然な 1 文に整える。
 - revised_title は簡潔で、焦点と貢献が伝わるものにする。
-- revised_abstract は 1 段落で、背景、目的、方法、貢献が自然につながるようにする。
+- revised_abstract は必ず 1 段落の連続した本文にする。
+- revised_abstract に見出し、項目名、ラベル、箇条書き、番号付け、項目ごとの改行を入れない。
+- revised_abstract では、「背景」「問題」「目的」「課題」「方法」「実験」「結果」「考察」「結論」「貢献」の順で内容を自然につなぐ。
+- revised_abstract では、入力に含まれる情報を安易に要約、省略、統合しない。
+- revised_abstract では、重要な条件、前提、制約、例外、数値、比較、評価、留保を落とさない。
+- revised_abstract では、入力にない実験結果や数値を捏造せず、不足情報は断定的に作り足さない。
 - keywords は 3 件から 6 件返す。
 - overall_notes には、全体として直すとよい点を返す。
 - next_steps には、次に埋めると完成度が上がる情報を返す。不要なら空配列でよい。
@@ -1202,6 +1207,44 @@ def save_generation(
         return int(cursor.lastrowid)
 
 
+def save_rescored_generation_result(generation_id: int, rescored_result: dict[str, Any]) -> None:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT result_json FROM generations WHERE id = ?",
+            (generation_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Generation not found.")
+
+        stored_result = json.loads(row["result_json"]) if row["result_json"] else {}
+        stored_result.update(
+            {
+                "revised_title": rescored_result.get("revised_title", stored_result.get("revised_title", "")),
+                "revised_abstract": rescored_result.get("revised_abstract", stored_result.get("revised_abstract", "")),
+                "evaluation": rescored_result.get("evaluation", stored_result.get("evaluation", [])),
+                "pass_threshold": rescored_result.get("pass_threshold", stored_result.get("pass_threshold", PASS_THRESHOLD)),
+                "pass_all": rescored_result.get("pass_all", stored_result.get("pass_all", False)),
+            }
+        )
+
+        conn.execute(
+            """
+            UPDATE generations
+            SET research_topic = ?, recommended_title = ?, abstract_text = ?, result_json = ?
+            WHERE id = ?
+            """,
+            (
+                str(stored_result.get("revised_title", "")).strip(),
+                str(stored_result.get("revised_title", "")).strip(),
+                str(stored_result.get("revised_abstract", "")).strip(),
+                json.dumps(stored_result, ensure_ascii=False),
+                generation_id,
+            ),
+        )
+        conn.commit()
+
+
 def list_recent_generations(limit: int = 10) -> list[dict[str, Any]]:
     with closing(sqlite3.connect(DB_PATH)) as conn:
         conn.row_factory = sqlite3.Row
@@ -1474,23 +1517,92 @@ def build_synology_chat_message(record: dict[str, Any]) -> str:
     return "\n".join(lines).strip()
 
 
+SYNOLOGY_CHAT_MESSAGE_LIMIT = 2000
+
+
+def _hard_split(text: str, limit: int) -> list[str]:
+    return [text[i : i + limit] for i in range(0, len(text), limit)]
+
+
+def split_chat_message(text: str, limit: int = SYNOLOGY_CHAT_MESSAGE_LIMIT) -> list[str]:
+    if len(text) <= limit:
+        return [text]
+
+    chunks: list[str] = []
+    current = ""
+
+    def flush() -> None:
+        nonlocal current
+        if current:
+            chunks.append(current)
+            current = ""
+
+    for line in text.split("\n"):
+        candidate = f"{current}\n{line}" if current else line
+        if len(candidate) <= limit:
+            current = candidate
+            continue
+
+        flush()
+        if len(line) <= limit:
+            current = line
+            continue
+
+        # A single line still exceeds the limit; fall back to splitting it at
+        # sentence-ending punctuation (or hard-splitting) before continuing.
+        for sentence in (s for s in re.split(r"(?<=[。！？])", line) if s):
+            candidate = f"{current}{sentence}" if current else sentence
+            if len(candidate) <= limit:
+                current = candidate
+                continue
+            flush()
+            if len(sentence) <= limit:
+                current = sentence
+            else:
+                pieces = _hard_split(sentence, limit)
+                chunks.extend(pieces[:-1])
+                current = pieces[-1]
+
+    flush()
+    return chunks
+
+
+SYNOLOGY_CHAT_POST_INTERVAL = 1.5
+
+
+def _post_synology_chat_chunk(chunk: str, max_attempts: int = 3) -> None:
+    error_message = "Synology Chat が投稿を受け付けませんでした。"
+    for attempt in range(max_attempts):
+        try:
+            response = httpx.post(
+                SYNOLOGY_CHAT_WEBHOOK_URL,
+                data={"payload": json.dumps({"text": chunk}, ensure_ascii=False)},
+                timeout=20.0,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get("success"):
+                return
+            error_message = payload.get("error", {}).get("errors") or error_message
+        except httpx.HTTPError as exc:
+            error_message = str(exc)
+
+        if attempt < max_attempts - 1:
+            # Synology Chat rate-limits posts made in quick succession
+            # ("create post too fast"); back off and retry.
+            time.sleep(SYNOLOGY_CHAT_POST_INTERVAL * (attempt + 2))
+            continue
+        raise HTTPException(status_code=502, detail=f"Synology Chat への投稿に失敗しました: {error_message}")
+
+
 def post_synology_chat_message(message_text: str) -> None:
     if not synology_chat_configured():
         raise HTTPException(status_code=503, detail="Synology Chat の Webhook URL が未設定です。")
 
-    try:
-        response = httpx.post(
-            SYNOLOGY_CHAT_WEBHOOK_URL,
-            data={"payload": json.dumps({"text": message_text}, ensure_ascii=False)},
-            timeout=20.0,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        if not payload.get("success"):
-            error_message = payload.get("error", {}).get("errors") or "Synology Chat が投稿を受け付けませんでした。"
-            raise HTTPException(status_code=502, detail=f"Synology Chat への投稿に失敗しました: {error_message}")
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"Synology Chat への投稿に失敗しました: {exc}") from exc
+    for index, chunk in enumerate(split_chat_message(message_text)):
+        if index > 0:
+            time.sleep(SYNOLOGY_CHAT_POST_INTERVAL)
+        _post_synology_chat_chunk(chunk)
 
 
 def process_generation_job(
@@ -1782,6 +1894,7 @@ def revise_section(
 
 @app.post("/api/evaluate-draft")
 def evaluate_draft(
+    generation_id: int = Form(0),
     backend: str = Form(""),
     target_language: str = Form("ja"),
     background: str = Form(""),
@@ -1836,7 +1949,11 @@ def evaluate_draft(
         finally:
             _ollama_pool.put(ollama_url)
 
-    return apply_evaluation_result(result, evaluation)
+    rescored_result = apply_evaluation_result(result, evaluation)
+    if generation_id > 0:
+        save_rescored_generation_result(generation_id, rescored_result)
+    rescored_result["generation_id"] = generation_id if generation_id > 0 else None
+    return rescored_result
 
 
 @app.post("/api/generations")

@@ -280,6 +280,7 @@ button:hover {
 button.is-loading {
   position: relative;
   padding-left: 48px;
+  cursor: wait;
 }
 
 button.is-loading::before {
@@ -297,8 +298,8 @@ button.is-loading::before {
 }
 
 button:disabled {
-  opacity: 0.72;
-  cursor: wait;
+  opacity: 0.58;
+  cursor: not-allowed;
   transform: none;
 }
 
@@ -662,6 +663,25 @@ button:disabled {
   border: 1px solid rgba(11, 114, 133, 0.24);
 }
 
+.writing-club-btn {
+  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+  color: #f8fffe;
+  border-color: rgba(9, 92, 107, 0.28);
+  box-shadow: 0 10px 24px rgba(15, 118, 110, 0.22);
+  font-weight: 700;
+}
+
+.writing-club-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0d6b65 0%, #0f9f93 100%);
+}
+
+.writing-club-btn:disabled {
+  background: rgba(11, 114, 133, 0.1);
+  color: var(--muted);
+  border-color: rgba(11, 114, 133, 0.18);
+  box-shadow: none;
+}
+
 .title-option strong {
   display: block;
   font-size: 1.04rem;
@@ -760,6 +780,16 @@ button:disabled {
   border-radius: 18px;
   border: 1px solid rgba(11, 114, 133, 0.14);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(242, 251, 252, 0.88));
+}
+
+.writing-club-action.is-ready {
+  border-color: rgba(15, 118, 110, 0.3);
+  background: linear-gradient(180deg, rgba(240, 253, 250, 0.96), rgba(225, 250, 245, 0.92));
+}
+
+.writing-club-action.is-unavailable {
+  border-color: rgba(146, 64, 14, 0.14);
+  background: linear-gradient(180deg, rgba(255, 250, 245, 0.94), rgba(255, 247, 237, 0.9));
 }
 
 .writing-club-status {
