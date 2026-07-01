@@ -23,6 +23,10 @@ const creditsPanel = document.getElementById("credits-panel");
 const creditsRemaining = document.getElementById("credits-remaining");
 const resultCost = document.getElementById("result-cost");
 const applyAllUpdatesButton = document.getElementById("apply-all-updates");
+const resultTitleInput = document.getElementById("result-revised-title");
+const resultAbstractInput = document.getElementById("result-revised-abstract");
+const rescoreResultButton = document.getElementById("rescore-result-button");
+const rescoreResultStatus = document.getElementById("rescore-result-status");
 const writingClubAction = document.getElementById("writing-club-action");
 const writingClubButton = document.getElementById("writing-club-button");
 const writingClubStatus = document.getElementById("writing-club-status");
@@ -130,6 +134,17 @@ function setWritingClubStatus(message, tone = "") {
   writingClubStatus.className = "writing-club-status";
   if (tone) {
     writingClubStatus.classList.add(`is-${tone}`);
+  }
+}
+
+function setRescoreStatus(message, tone = "") {
+  if (!rescoreResultStatus) {
+    return;
+  }
+  rescoreResultStatus.textContent = message || "";
+  rescoreResultStatus.className = "rescore-result-status";
+  if (tone) {
+    rescoreResultStatus.classList.add(`is-${tone}`);
   }
 }
 
@@ -616,9 +631,13 @@ function renderResult(payload) {
   const result = payload.result || {};
   latestGenerationId = payload.id || null;
   hideProgress();
-  document.getElementById("result-revised-title").textContent = result.revised_title || "—";
-  document.getElementById("result-revised-abstract").textContent =
-    result.revised_abstract || "改稿アブストラクトを生成できませんでした。";
+  if (resultTitleInput) {
+    resultTitleInput.value = result.revised_title || "";
+  }
+  if (resultAbstractInput) {
+    resultAbstractInput.value = result.revised_abstract || "改稿アブストラクトを生成できませんでした。";
+  }
+  setRescoreStatus("タイトルやアブストラクトを編集して、このまま採点だけやり直せます。");
   document.getElementById("result-abstract-feedback").textContent =
     result.abstract_feedback || "コメントはありません。";
   renderEvaluationSummary(result.evaluation || [], result.pass_threshold || 7.5, Boolean(result.pass_all));
@@ -764,6 +783,7 @@ form.addEventListener("submit", async (event) => {
   latestGenerationId = null;
   latestPassAll = false;
   renderWritingClubAction(false);
+  setRescoreStatus("");
 
   const formData = new FormData(form);
 
@@ -810,6 +830,37 @@ if (writingClubButton) {
       setWritingClubStatus(`投稿に失敗しました: ${error.message}`, "error");
     } finally {
       setSectionButtonLoading(writingClubButton, false);
+    }
+  });
+}
+
+if (rescoreResultButton) {
+  rescoreResultButton.addEventListener("click", async () => {
+    const revisedTitle = resultTitleInput?.value.trim() || "";
+    const revisedAbstract = resultAbstractInput?.value.trim() || "";
+    if (!revisedTitle || !revisedAbstract) {
+      setRescoreStatus("タイトルとアブストラクトの両方を入力してから採点してください。", "error");
+      return;
+    }
+
+    const formData = new FormData(form);
+    formData.set("revised_title", revisedTitle);
+    formData.set("revised_abstract", revisedAbstract);
+
+    setSectionButtonLoading(rescoreResultButton, true);
+    setRescoreStatus("評価スコアを再計算しています...");
+    try {
+      const payload = await fetchJson("/api/evaluate-draft", {
+        method: "POST",
+        body: formData,
+      });
+      renderEvaluationSummary(payload.evaluation || [], payload.pass_threshold || 7.5, Boolean(payload.pass_all));
+      renderWritingClubAction(Boolean(payload.pass_all));
+      setRescoreStatus("編集後のタイトル・アブストラクトで採点を更新しました。", "success");
+    } catch (error) {
+      setRescoreStatus(`採点のやり直しに失敗しました: ${error.message}`, "error");
+    } finally {
+      setSectionButtonLoading(rescoreResultButton, false);
     }
   });
 }

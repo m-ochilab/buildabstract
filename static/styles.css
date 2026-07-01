@@ -496,6 +496,49 @@ button:disabled {
   line-height: 1.25;
 }
 
+.result-edit-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.result-title-input,
+.result-abstract-input {
+  width: 100%;
+  border: 1px solid rgba(17, 94, 89, 0.18);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.result-title-input {
+  font-size: clamp(1.2rem, 2vw, 1.8rem);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.result-abstract-input {
+  min-height: 220px;
+  line-height: 1.9;
+  white-space: pre-wrap;
+}
+
+.rescore-result-status {
+  margin: 10px 0 0;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.rescore-result-status.is-success {
+  color: #0b6b4b;
+}
+
+.rescore-result-status.is-error {
+  color: #9a3412;
+}
+
 .result-block {
   margin-top: 22px;
 }

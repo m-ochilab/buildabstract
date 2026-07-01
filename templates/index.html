@@ -236,14 +236,20 @@
 
               <section class="hero-result">
                 <p class="result-label">Generated Title</p>
-                <h3 id="result-revised-title">—</h3>
+                <label class="result-edit-label" for="result-revised-title">タイトル</label>
+                <input id="result-revised-title" class="result-title-input" type="text" value="" />
               </section>
 
               <div class="result-block">
-                <h3>改稿アブストラクト</h3>
+                <div class="result-block-head">
+                  <h3>改稿アブストラクト</h3>
+                  <button type="button" id="rescore-result-button" class="secondary-btn">この内容で採点だけ実行</button>
+                </div>
                 <article class="result-surface">
-                  <p id="result-revised-abstract" class="abstract-text"></p>
+                  <label class="result-edit-label" for="result-revised-abstract">アブストラクト</label>
+                  <textarea id="result-revised-abstract" class="result-abstract-input" rows="8"></textarea>
                 </article>
+                <p id="rescore-result-status" class="rescore-result-status"></p>
               </div>
 
               <div class="result-block">

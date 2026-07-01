@@ -1780,6 +1780,65 @@ def revise_section(
         _ollama_pool.put(ollama_url)
 
 
+@app.post("/api/evaluate-draft")
+def evaluate_draft(
+    backend: str = Form(""),
+    target_language: str = Form("ja"),
+    background: str = Form(""),
+    problem: str = Form(""),
+    objective: str = Form(""),
+    challenge: str = Form(""),
+    methods: str = Form(""),
+    experiment: str = Form(""),
+    expected_results: str = Form(""),
+    discussion: str = Form(""),
+    conclusion: str = Form(""),
+    contribution: str = Form(""),
+    revised_title: str = Form(""),
+    revised_abstract: str = Form(""),
+    model: str = Form(DEFAULT_MODEL),
+) -> dict[str, Any]:
+    backend_name = resolve_backend_choice(backend)
+    title_text = revised_title.strip()
+    abstract_text = revised_abstract.strip()
+    if len(title_text) < 3 or len(abstract_text) < 10:
+        raise HTTPException(status_code=400, detail="タイトルは 3 文字以上、アブストラクトは 10 文字以上入力してください。")
+
+    request_data = GenerationRequest(
+        target_language=target_language.strip() or "ja",
+        background=background.strip(),
+        problem=problem.strip(),
+        objective=objective.strip(),
+        challenge=challenge.strip(),
+        methods=methods.strip(),
+        experiment=experiment.strip(),
+        expected_results=expected_results.strip(),
+        discussion=discussion.strip(),
+        conclusion=conclusion.strip(),
+        contribution=contribution.strip(),
+        model=model_for_backend(backend_name),
+    )
+    result = {
+        "revised_title": title_text,
+        "revised_abstract": abstract_text,
+    }
+
+    if backend_name == "openrouter":
+        api_key = _openrouter_pool.get()
+        try:
+            evaluation = evaluate_generated_outputs_openrouter(request_data, result, api_key)
+        finally:
+            _openrouter_pool.put(api_key)
+    else:
+        ollama_url = _ollama_pool.get()
+        try:
+            evaluation = evaluate_generated_outputs_ollama(request_data, result, ollama_url)
+        finally:
+            _ollama_pool.put(ollama_url)
+
+    return apply_evaluation_result(result, evaluation)
+
+
 @app.post("/api/generations")
 async def create_generation(
     background_tasks: BackgroundTasks,
