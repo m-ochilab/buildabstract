@@ -71,7 +71,7 @@ const NEXT_FIELD_BY_SOURCE = {
 let loadingIntervalId = null;
 let pollingAbortController = null;
 let timeoutSeconds = 300;
-let synologyChatConfigured = false;
+let synologyChatConfigured = null; // null = /api/health からの確認がまだ済んでいない
 let latestGenerationId = null;
 let latestPassAll = false;
 let availableBackends = {
@@ -210,7 +210,11 @@ function renderWritingClubAction(passAll) {
   }
 
   writingClubAction.classList.remove("hidden");
-  if (synologyChatConfigured && latestGenerationId) {
+  if (synologyChatConfigured === null) {
+    writingClubAction.classList.add("is-unavailable");
+    writingClubButton.disabled = true;
+    setWritingClubStatus("Synology Chat の設定を確認しています...", "muted");
+  } else if (synologyChatConfigured && latestGenerationId) {
     writingClubAction.classList.add("is-ready");
     writingClubButton.disabled = false;
     setWritingClubStatus("合格済みのため、この結果を論文執筆会へ投稿できます。", "muted");

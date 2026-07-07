@@ -78,6 +78,12 @@ OPENROUTER_MAX_CONCURRENCY=10
 - `SYNOLOGY_CHAT_WEBHOOK_URL`
   - 合格時に `論文執筆会に確認依頼を投稿` ボタンから通知する先です
 
+`.env` は起動時に一度だけ読み込まれるため、本番環境(systemd)で運用している場合は `.env` を編集したら必ずサービスを再起動してください。再起動しないと古い設定のまま動き続け、例えば `SYNOLOGY_CHAT_WEBHOOK_URL` を追加しても「webhook が未設定です」というエラーが出続けます。
+
+```bash
+sudo systemctl restart buildabstract
+```
+
 ## API
 
 ### `GET /api/health`
