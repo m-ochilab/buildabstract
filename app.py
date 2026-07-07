@@ -5,6 +5,7 @@ import os
 import queue
 import re
 import sqlite3
+import subprocess
 import time
 import traceback
 from contextlib import closing
@@ -128,6 +129,25 @@ def _static_version() -> str:
 
 
 STATIC_VERSION = _static_version()
+
+
+def _app_version() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%cI"],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
+        )
+        commit_time = datetime.fromisoformat(result.stdout.strip())
+        return commit_time.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return "unknown"
+
+
+APP_VERSION = _app_version()
 
 
 class GenerationRequest(BaseModel):
@@ -1744,6 +1764,7 @@ def index(request: Request) -> HTMLResponse:
             "guidance_text": load_guidance(),
             "backend": current_backend(),
             "static_version": STATIC_VERSION,
+            "app_version": APP_VERSION,
         },
     )
 
