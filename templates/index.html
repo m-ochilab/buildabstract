@@ -3,17 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BuildAbstract | 論文タイトル・アブストラクト推敲サービス</title>
+    <title>BuildAbstract | 研究アイデア具体化支援</title>
     <link rel="icon" type="image/png" href="/static/imagebuildabst.png?v={{ static_version }}" />
     <link rel="stylesheet" href="/static/styles.css?v={{ static_version }}" />
   </head>
   <body>
     <main class="page">
       <section class="hero">
-        <p class="eyebrow">{{ "OpenRouter Revision Studio" if backend == "openrouter" else "Local LLM Revision Studio" }}</p>
-        <h1>論文タイトル・アブストラクト推敲サービス</h1>
+        <p class="eyebrow">BuildAbstract</p>
+        <h1>研究アイデアを、<br />動かせる一文へ。</h1>
         <p class="lead">
-          情報工学全般のジャーナル論文を前提に、各項目を短文で入力しながら AI に推敲してもらうための画面です。最後に、全入力からタイトルとアブストラクト案をまとめて生成します。
+          研究アイデアの各要素を一文に絞り、課題・目的・方法・検証を具体化して、実際の研究を進める指針となるアブストラクトへつなげます。
         </p>
         <p class="version-tag">Version: {{ app_version }}</p>
         <div class="status-panel">
@@ -26,7 +26,7 @@
             <strong id="fixed-model">{{ default_model }}</strong>
           </div>
           <div id="usage-panel" class="hidden">
-            <span class="status-label">推敲コスト合計</span>
+            <span class="status-label">AI支援コスト合計</span>
             <strong id="usage-total">—</strong>
           </div>
           <div id="credits-panel" class="hidden">
@@ -39,8 +39,8 @@
       <section class="grid">
         <section class="card">
           <div class="card-header">
-            <h2>入力と項目別推敲</h2>
-            <p>各項目は短文で大丈夫です。右下のボタンで、その項目だけを AI に見せてフィードバックと修正候補を生成できます。</p>
+            <h2>研究の設計図をつくる</h2>
+            <p>各項目を、研究上の判断が一つだけ伝わる一文にします。最初は短いメモでも構いません。AIが曖昧さを削り、一文へ先鋭化します。</p>
           </div>
 
           <form id="generation-form" class="form">
@@ -74,13 +74,15 @@
               </label>
             </div>
 
+            <div class="phase-heading"><span>01</span><div><strong>問いを定める</strong><p>なぜ取り組むのか、何を解くのかを切り分けます。</p></div></div>
+
             <section class="input-section" data-field="background">
               <label>
                 <span>背景</span>
-                <textarea name="background" rows="3" placeholder="研究背景を短く書いてください。"></textarea>
+                <textarea name="background" rows="2" placeholder="この研究が必要とされる状況を、一文で。"></textarea>
               </label>
               <div class="section-actions">
-                <button type="button" class="section-generate-btn" data-field="background">背景を推敲</button>
+                <button type="button" class="section-generate-btn" data-field="background">AIと背景を具体化</button>
               </div>
               <div id="section-result-background" class="section-result hidden"></div>
             </section>
@@ -88,32 +90,34 @@
             <section class="input-section" data-field="problem">
               <label>
                 <span>問題</span>
-                <textarea name="problem" rows="3" placeholder="背景の中で、何が問題なのかを短く書いてください。"></textarea>
+                <textarea name="problem" rows="2" placeholder="誰の、何が、なぜ問題なのかを、一文で。"></textarea>
               </label>
               <div class="section-actions">
-                <button type="button" class="section-generate-btn" data-field="problem">問題を推敲</button>
+                <button type="button" class="section-generate-btn" data-field="problem">AIと問題を具体化</button>
               </div>
               <div id="section-result-problem" class="section-result hidden"></div>
             </section>
 
             <section class="input-section" data-field="objective">
               <label>
-                <span>この論文での目的</span>
-                <textarea name="objective" rows="3" placeholder="この論文で何を明らかにしたいかを書いてください。"></textarea>
+                <span>この研究で到達したい状態</span>
+                <textarea name="objective" rows="2" placeholder="何ができる・分かるようになれば成功かを、一文で。"></textarea>
               </label>
               <div class="section-actions">
-                <button type="button" class="section-generate-btn" data-field="objective">目的を推敲</button>
+                <button type="button" class="section-generate-btn" data-field="objective">AIと目的を具体化</button>
               </div>
               <div id="section-result-objective" class="section-result hidden"></div>
             </section>
 
+            <div class="phase-heading"><span>02</span><div><strong>実行可能にする</strong><p>目的を、方法・検証・具体的な作業へ落とし込みます。</p></div></div>
+
             <section class="input-section" data-field="challenge">
               <label>
                 <span>目的達成のために解決すべき課題</span>
-                <textarea name="challenge" rows="3" placeholder="目的を達成するために、どの課題を解く必要があるかを書いてください。"></textarea>
+                <textarea name="challenge" rows="2" placeholder="目的達成を阻む最大の課題を、一文で。"></textarea>
               </label>
               <div class="section-actions">
-                <button type="button" class="section-generate-btn" data-field="challenge">課題を推敲</button>
+                <button type="button" class="section-generate-btn" data-field="challenge">AIと課題を具体化</button>
               </div>
               <div id="section-result-challenge" class="section-result hidden"></div>
             </section>
@@ -121,21 +125,21 @@
             <section class="input-section" data-field="methods">
               <label>
                 <span>方法</span>
-                <textarea name="methods" rows="3" placeholder="使う手法、モデル、解析方法などを短く書いてください。"></textarea>
+                <textarea name="methods" rows="2" placeholder="課題をどう解くのか、核となる方法を一文で。"></textarea>
               </label>
               <div class="section-actions">
-                <button type="button" class="section-generate-btn" data-field="methods">方法を推敲</button>
+                <button type="button" class="section-generate-btn" data-field="methods">AIと方法を具体化</button>
               </div>
               <div id="section-result-methods" class="section-result hidden"></div>
             </section>
 
             <section class="input-section" data-field="experiment">
               <label>
-                <span>実験</span>
-                <textarea name="experiment" rows="3" placeholder="評価方法、比較条件、対象データなどを書いてください。"></textarea>
+                <span>検証と具体的な作業</span>
+                <textarea name="experiment" rows="2" placeholder="何を使い、何と比べ、何で成否を判断するかを一文で。"></textarea>
               </label>
               <div class="section-actions">
-                <button type="button" class="section-generate-btn" data-field="experiment">実験を推敲</button>
+                <button type="button" class="section-generate-btn" data-field="experiment">AIと検証を具体化</button>
               </div>
               <div id="section-result-experiment" class="section-result hidden"></div>
             </section>
@@ -143,21 +147,23 @@
             <section class="input-section" data-field="expected_results">
               <label>
                 <span>想定される結果</span>
-                <textarea name="expected_results" rows="3" placeholder="どういう結果が期待されるかを短く書いてください。"></textarea>
+                <textarea name="expected_results" rows="2" placeholder="検証でどのような変化が現れると予想するかを、一文で。"></textarea>
               </label>
               <div class="section-actions">
-                <button type="button" class="section-generate-btn" data-field="expected_results">想定結果を推敲</button>
+                <button type="button" class="section-generate-btn" data-field="expected_results">AIと結果を具体化</button>
               </div>
               <div id="section-result-expected_results" class="section-result hidden"></div>
             </section>
 
+            <div class="phase-heading"><span>03</span><div><strong>研究の核を言葉にする</strong><p>結果から何が言え、アイデアの価値がどこにあるかを明確にします。</p></div></div>
+
             <section class="input-section" data-field="discussion">
               <label>
                 <span>課題が解決されているかの考察</span>
-                <textarea name="discussion" rows="3" placeholder="結果から何が言えそうか、課題解決に近づくかを書いてください。"></textarea>
+                <textarea name="discussion" rows="2" placeholder="その結果が課題の解決をどう示すかを、一文で。"></textarea>
               </label>
               <div class="section-actions">
-                <button type="button" class="section-generate-btn" data-field="discussion">考察を推敲</button>
+                <button type="button" class="section-generate-btn" data-field="discussion">AIと意味を具体化</button>
               </div>
               <div id="section-result-discussion" class="section-result hidden"></div>
             </section>
@@ -165,40 +171,59 @@
             <section class="input-section" data-field="conclusion">
               <label>
                 <span>結論</span>
-                <textarea name="conclusion" rows="3" placeholder="この論文として最後にどう結ぶかを書いてください。"></textarea>
+                <textarea name="conclusion" rows="2" placeholder="この研究によって最終的に何が言えるかを、一文で。"></textarea>
               </label>
               <div class="section-actions">
-                <button type="button" class="section-generate-btn" data-field="conclusion">結論を推敲</button>
+                <button type="button" class="section-generate-btn" data-field="conclusion">AIと結論を具体化</button>
               </div>
               <div id="section-result-conclusion" class="section-result hidden"></div>
             </section>
 
             <section class="input-section" data-field="contribution">
               <label>
-                <span>貢献</span>
-                <textarea name="contribution" rows="3" placeholder="この研究の新規性や価値を短く書いてください。"></textarea>
+                <span>アイデアの核</span>
+                <textarea name="contribution" rows="2" placeholder="既存手法との違いと価値を、一文で。"></textarea>
               </label>
               <div class="section-actions">
-                <button type="button" class="section-generate-btn" data-field="contribution">貢献を推敲</button>
+                <button type="button" class="section-generate-btn" data-field="contribution">AIと核を具体化</button>
               </div>
               <div id="section-result-contribution" class="section-result hidden"></div>
             </section>
 
             <section class="guide-panel">
-              <span>推敲ガイド</span>
-              <p>分野は情報工学全般、論文種別はジャーナル、想定読者は学会査読者として固定し、以下のガイドをベースに推敲します。</p>
-              <pre>{{ guidance_text }}</pre>
+              <span>AI支援の前提</span>
+              <p>AIは入力された事実をもとに、曖昧さや不足を指摘して具体化を助けます。入力にない研究結果や数値は追加しません。</p>
+              <details><summary>生成ガイドを確認</summary><pre>{{ guidance_text }}</pre></details>
             </section>
 
-            <button type="submit" id="submit-button">入力内容からタイトルとアブストラクトを生成</button>
+            <button type="submit" id="submit-button">研究の指針となるアブストラクトをつくる</button>
           </form>
         </section>
 
         <section class="results-column">
+          <section class="card compass-card">
+            <div class="card-header">
+              <p class="eyebrow">Research Compass</p>
+              <h2>研究コンパス</h2>
+              <p>入力全体をAIが横断し、研究の核と次の行動へ圧縮します。</p>
+            </div>
+            <div class="compass-pitch">
+              <span>研究ピッチ</span>
+              <p id="compass-pitch">3項目以上入力して、研究コンパスを生成してください。</p>
+            </div>
+            <div class="compass-grid">
+              <article><span>核となる仮説</span><p id="compass-hypothesis">まだ分析されていません。</p></article>
+              <article><span>最大の未決定事項</span><p id="compass-gap">まだ分析されていません。</p></article>
+              <article class="compass-core"><span>次に行う具体的作業</span><p id="compass-action">まだ分析されていません。</p></article>
+            </div>
+            <div class="compass-progress"><span id="compass-count">0 / 10 項目</span><div><i id="compass-fill"></i></div></div>
+            <button type="button" id="compass-generate-button">入力全体から研究コンパスを生成</button>
+            <p id="compass-status" class="compass-status"></p>
+          </section>
           <section class="card result-card">
             <div class="card-header">
-              <h2>最終生成結果</h2>
-              <p>各項目を整えたあとに、入力全体からタイトルとアブストラクトをまとめて生成します。</p>
+              <h2>研究の指針</h2>
+              <p>研究の論理と次の作業を一つのアブストラクトとして確認します。</p>
             </div>
             <div id="result-empty" class="empty-state">まだ最終生成されていません。</div>
             <div id="result-progress" class="progress-panel hidden" aria-live="polite">
@@ -243,8 +268,8 @@
 
               <div class="result-block">
                 <div class="result-block-head">
-                  <h3>改稿アブストラクト</h3>
-                  <button type="button" id="rescore-result-button" class="secondary-btn">この内容で採点だけ実行</button>
+                  <h3>研究を進めるためのアブストラクト</h3>
+                  <button type="button" id="rescore-result-button" class="secondary-btn">構想の具体性を再確認</button>
                 </div>
                 <article class="result-surface">
                   <label class="result-edit-label" for="result-revised-abstract">アブストラクト</label>
@@ -254,7 +279,8 @@
               </div>
 
               <div class="result-block">
-                <h3>評価スコア</h3>
+                <details class="evaluation-details">
+                <summary>構想の具体性チェック（参考）</summary>
                 <div class="score-summary-card">
                   <div class="score-summary-head">
                     <div>
@@ -276,15 +302,16 @@
                   <div id="result-score-chart" class="score-chart" aria-label="評価レーダーチャート"></div>
                   <div id="result-evaluation-list" class="stack"></div>
                 </div>
+                </details>
               </div>
 
               <div class="result-block">
-                <h3>項目別の総括フィードバック</h3>
+                <h3>研究構想へのフィードバック</h3>
                 <div id="result-section-feedback" class="stack"></div>
               </div>
 
               <div class="result-block">
-                <h3>アブストラクトへのコメント</h3>
+                <h3>研究の指針としてのコメント</h3>
                 <article class="result-surface">
                   <p id="result-abstract-feedback" class="abstract-text"></p>
                 </article>
@@ -301,13 +328,13 @@
               </div>
 
               <div class="result-block">
-                <h3>次に詰めるとよい点</h3>
+                <h3>次に行うこと</h3>
                 <ul id="result-next-steps"></ul>
               </div>
 
               <div class="result-block">
                 <div class="result-block-head">
-                  <h3>改善用の更新案</h3>
+                  <h3>構想を具体化する更新案</h3>
                   <button type="button" id="apply-all-updates" class="secondary-btn">すべて入力欄へ反映</button>
                 </div>
                 <div id="result-section-updates" class="stack"></div>

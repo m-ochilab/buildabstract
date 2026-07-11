@@ -34,14 +34,14 @@ const sectionButtons = Array.from(document.querySelectorAll(".section-generate-b
 const SECTION_LABELS = {
   background: "背景",
   problem: "問題",
-  objective: "この論文での目的",
+  objective: "この研究で到達したい状態",
   challenge: "目的達成のために解決すべき課題",
   methods: "方法",
-  experiment: "実験",
+  experiment: "検証と具体的な作業",
   expected_results: "想定される結果",
   discussion: "課題が解決されているかの考察",
   conclusion: "結論",
-  contribution: "貢献",
+  contribution: "アイデアの核",
 };
 const EVALUATION_META = [
   { key: "logic", label: "全体の論理の説得性", short: "論理" },
@@ -311,6 +311,7 @@ function renderInlineSectionResult(payload) {
       nextInput.value = payload[next.detectedKey];
     }
   }
+  updateResearchCompass();
 }
 
 function unlockMainField(fieldName) {
@@ -341,6 +342,7 @@ function applyUpdateToForm(fieldName, value) {
   unlockMainField(fieldName);
   textarea.value = value;
   textarea.focus();
+  updateResearchCompass();
 }
 
 function renderRadarChart(items, passThreshold = 8) {
@@ -548,7 +550,7 @@ function setLoadingState(isLoading) {
   }
 
   if (!isLoading) {
-    submitButton.textContent = "入力内容からタイトルとアブストラクトを生成";
+    submitButton.textContent = "研究の指針となるアブストラクトをつくる";
     return;
   }
 
@@ -647,9 +649,9 @@ function renderResult(payload) {
     resultTitleInput.value = result.revised_title || "";
   }
   if (resultAbstractInput) {
-    resultAbstractInput.value = result.revised_abstract || "改稿アブストラクトを生成できませんでした。";
+    resultAbstractInput.value = result.revised_abstract || "アブストラクトを生成できませんでした。";
   }
-  setRescoreStatus("タイトルやアブストラクトを編集して、このまま採点だけやり直せます。");
+  setRescoreStatus("内容を編集したあと、研究構想の具体性を再確認できます。");
   document.getElementById("result-abstract-feedback").textContent =
     result.abstract_feedback || "コメントはありません。";
   renderEvaluationSummary(result.evaluation || [], result.pass_threshold || 7.5, Boolean(result.pass_all));
@@ -702,7 +704,7 @@ async function pollJob(jobId) {
 
 async function loadHealth() {
   try {
-    const payload = await fetchJson("/api/health");
+    const payload = await fetchJson("/api/health", { cache: "no-store" });
     synologyChatConfigured = Boolean(payload.synology_chat_configured);
     availableBackends = {
       openrouter: {
@@ -768,11 +770,23 @@ sectionButtons.forEach((button) => {
     const fieldName = button.dataset.field;
     const formData = new FormData(form);
     formData.set("field_name", fieldName);
+    const resultTarget = document.getElementById(`section-result-${fieldName}`);
+    const originalLabel = button.textContent;
+    let elapsedSeconds = 0;
+    if (resultTarget) {
+      resultTarget.classList.remove("hidden");
+      resultTarget.innerHTML = '<p class="section-waiting">Gemini 2.5 Pro が研究内容を分析しています。通常は30秒前後かかります。</p>';
+    }
     setSectionButtonLoading(button, true);
+    const elapsedTimer = window.setInterval(() => {
+      elapsedSeconds += 1;
+      button.textContent = `分析中 ${elapsedSeconds}秒`;
+    }, 1000);
     try {
       const payload = await fetchJson("/api/revise-section", {
         method: "POST",
         body: formData,
+        signal: AbortSignal.timeout(70000),
       });
       renderInlineSectionResult(payload);
       // Cost for this call is logged in the background (OpenRouter's cost
@@ -780,9 +794,16 @@ sectionButtons.forEach((button) => {
       window.setTimeout(loadUsage, 10000);
       window.setTimeout(loadUsage, 26000);
     } catch (error) {
-      alert(`項目推敲に失敗しました: ${error.message}`);
+      if (resultTarget) {
+        const message = error.name === "TimeoutError"
+          ? "70秒以内に応答がありませんでした。もう一度実行してください。"
+          : `分析に失敗しました: ${error.message}`;
+        resultTarget.innerHTML = `<p class="section-error">${escapeHtml(message)}</p>`;
+      }
     } finally {
+      window.clearInterval(elapsedTimer);
       setSectionButtonLoading(button, false);
+      button.textContent = originalLabel;
     }
   });
 });
@@ -851,7 +872,7 @@ if (rescoreResultButton) {
     const revisedTitle = resultTitleInput?.value.trim() || "";
     const revisedAbstract = resultAbstractInput?.value.trim() || "";
     if (!revisedTitle || !revisedAbstract) {
-      setRescoreStatus("タイトルとアブストラクトの両方を入力してから採点してください。", "error");
+      setRescoreStatus("タイトルとアブストラクトの両方を入力してから確認してください。", "error");
       return;
     }
 
@@ -863,7 +884,7 @@ if (rescoreResultButton) {
     formData.set("revised_abstract", revisedAbstract);
 
     setSectionButtonLoading(rescoreResultButton, true);
-    setRescoreStatus("評価スコアを再計算しています...");
+    setRescoreStatus("研究構想の具体性を確認しています...");
     try {
       const payload = await fetchJson("/api/evaluate-draft", {
         method: "POST",
@@ -874,9 +895,9 @@ if (rescoreResultButton) {
       }
       renderEvaluationSummary(payload.evaluation || [], payload.pass_threshold || 7.5, Boolean(payload.pass_all));
       renderWritingClubAction(Boolean(payload.pass_all));
-      setRescoreStatus("編集後のタイトル・アブストラクトで採点を更新しました。", "success");
+      setRescoreStatus("編集後の内容で具体性チェックを更新しました。", "success");
     } catch (error) {
-      setRescoreStatus(`採点のやり直しに失敗しました: ${error.message}`, "error");
+      setRescoreStatus(`具体性の再確認に失敗しました: ${error.message}`, "error");
     } finally {
       setSectionButtonLoading(rescoreResultButton, false);
     }
@@ -885,3 +906,129 @@ if (rescoreResultButton) {
 
 loadHealth();
 backendSelect.addEventListener("change", updateBackendUi);
+
+const compassGenerateButton = document.getElementById("compass-generate-button");
+const compassStatus = document.getElementById("compass-status");
+const DRAFT_STORAGE_KEY = "buildabstract:research-draft:v1";
+let compassGenerated = false;
+
+function saveResearchDraft() {
+  const draft = {};
+  Object.keys(SECTION_LABELS).forEach((fieldName) => {
+    draft[fieldName] = form.elements.namedItem(fieldName)?.value || "";
+  });
+  try {
+    window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+  } catch (_error) {
+    // Storage may be unavailable in private browsing or restricted environments.
+  }
+}
+
+function restoreResearchDraft() {
+  try {
+    const savedDraft = JSON.parse(window.localStorage.getItem(DRAFT_STORAGE_KEY) || "{}");
+    Object.keys(SECTION_LABELS).forEach((fieldName) => {
+      const textarea = form.elements.namedItem(fieldName);
+      if (textarea && typeof savedDraft[fieldName] === "string") {
+        textarea.value = savedDraft[fieldName];
+      }
+    });
+  } catch (_error) {
+    // Ignore malformed or inaccessible saved data and keep empty defaults.
+  }
+}
+
+function updateResearchCompass() {
+  const researchFields = Object.keys(SECTION_LABELS);
+  const filledCount = researchFields.filter((fieldName) => form.elements.namedItem(fieldName)?.value.trim()).length;
+  const count = document.getElementById("compass-count");
+  const fill = document.getElementById("compass-fill");
+  if (count) count.textContent = `${filledCount} / ${researchFields.length} 項目`;
+  if (fill) fill.style.width = `${(filledCount / researchFields.length) * 100}%`;
+  if (compassGenerateButton) compassGenerateButton.disabled = filledCount < 3;
+  if (compassGenerated && compassStatus) {
+    compassStatus.textContent = "入力が変わりました。再生成すると分析を更新できます。";
+    compassStatus.className = "compass-status is-stale";
+  }
+  saveResearchDraft();
+  updateSentenceGuides();
+}
+
+if (compassGenerateButton) {
+  compassGenerateButton.addEventListener("click", async () => {
+    const originalLabel = compassGenerateButton.textContent;
+    let elapsedSeconds = 0;
+    setSectionButtonLoading(compassGenerateButton, true);
+    compassStatus.textContent = "Gemini 2.5 Pro が入力全体を分析しています。通常は30秒前後かかります。";
+    compassStatus.className = "compass-status";
+    const elapsedTimer = window.setInterval(() => {
+      elapsedSeconds += 1;
+      compassGenerateButton.textContent = `研究構想を分析中 ${elapsedSeconds}秒`;
+    }, 1000);
+    try {
+      const payload = await fetchJson("/api/research-compass", {
+        method: "POST",
+        body: new FormData(form),
+        signal: AbortSignal.timeout(70000),
+      });
+      document.getElementById("compass-pitch").textContent = payload.research_pitch || "研究ピッチを特定できませんでした。";
+      document.getElementById("compass-hypothesis").textContent = payload.core_hypothesis || "核となる仮説を特定できませんでした。";
+      document.getElementById("compass-gap").textContent = payload.critical_gap || "未決定事項を特定できませんでした。";
+      document.getElementById("compass-action").textContent = payload.next_action || "次の作業を特定できませんでした。";
+      compassGenerated = true;
+      compassStatus.textContent = "入力全体を分析しました。";
+      window.setTimeout(loadUsage, 10000);
+    } catch (error) {
+      compassStatus.textContent = error.name === "TimeoutError"
+        ? "70秒以内に応答がありませんでした。もう一度実行してください。"
+        : `分析に失敗しました: ${error.message}`;
+      compassStatus.className = "compass-status is-stale";
+    } finally {
+      window.clearInterval(elapsedTimer);
+      setSectionButtonLoading(compassGenerateButton, false);
+      compassGenerateButton.textContent = originalLabel;
+      const filledCount = Object.keys(SECTION_LABELS).filter(
+        (fieldName) => form.elements.namedItem(fieldName)?.value.trim(),
+      ).length;
+      compassGenerateButton.disabled = filledCount < 3;
+    }
+  });
+}
+
+function sentenceCount(value) {
+  const text = String(value || "").trim();
+  if (!text) return 0;
+  const endings = text.match(/[。！？!?]+(?=\s|$)|[。！？!?]/g);
+  if (!endings) return 1;
+  const trailingEnding = /[。！？!?]\s*$/.test(text);
+  return endings.length + (trailingEnding ? 0 : 1);
+}
+
+function updateSentenceGuides() {
+  Object.keys(SECTION_LABELS).forEach((fieldName) => {
+    const textarea = form.elements.namedItem(fieldName);
+    const guide = document.querySelector(`.sentence-guide[data-field="${fieldName}"]`);
+    if (!textarea || !guide) return;
+    const count = sentenceCount(textarea.value);
+    guide.classList.toggle("is-ready", count === 1);
+    guide.classList.toggle("is-warning", count > 1);
+    guide.textContent = count === 0 ? "一つの判断を、一文で入力" : count === 1 ? "1文" : `${count}文あります。一文に絞ってください`;
+  });
+}
+
+document.querySelectorAll(".input-section[data-field]").forEach((section) => {
+  const fieldName = section.dataset.field;
+  const textarea = form.elements.namedItem(fieldName);
+  if (!textarea) return;
+  textarea.setAttribute("aria-describedby", `sentence-guide-${fieldName}`);
+  const guide = document.createElement("p");
+  guide.id = `sentence-guide-${fieldName}`;
+  guide.className = "sentence-guide";
+  guide.dataset.field = fieldName;
+  textarea.insertAdjacentElement("afterend", guide);
+});
+
+form.addEventListener("input", updateResearchCompass);
+form.addEventListener("change", updateResearchCompass);
+restoreResearchDraft();
+updateResearchCompass();

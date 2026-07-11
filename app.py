@@ -110,7 +110,7 @@ def resolve_backend_choice(requested_backend: str) -> str:
     return backend_name
 
 
-app = FastAPI(title="BuildAbstract | 論文タイトル・アブストラクト推敲サービス")
+app = FastAPI(title="BuildAbstract | 研究アイデア具体化支援")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
@@ -389,8 +389,8 @@ def build_generation_prompt(request_data: GenerationRequest, guidance_text: str)
         for field_name, label in SECTION_DEFINITIONS
     )
     return f"""
-あなたは研究支援に強いアカデミック・ライティングアシスタントです。
-目的は、与えられた短文メモをもとに、論文タイトルとアブストラクトを推敲することです。
+あなたは、研究アイデアを実行可能な計画へ具体化する研究構想アシスタントです。
+目的は、与えられた短文メモから研究の核を明確にし、研究課題、方法、検証、実際の作業が一貫した指針となるタイトルとアブストラクトを作ることです。論文の書き方を教えること自体は目的ではありません。
 
 出力は必ず妥当な JSON のみとし、Markdown のコードフェンスや余計な説明は含めないでください。
 
@@ -404,9 +404,11 @@ def build_generation_prompt(request_data: GenerationRequest, guidance_text: str)
 - 与えられていない実験結果、数値、評価指標、データセット名を捏造しない。
 - 論文本文向けの断定的なトーンで書く。
 - 情報が不足していても、過度に保留的な言い回しへ逃げず、入力から妥当な主張として自然にまとめる。
-- 各項目について、問題点の指摘と、より論文らしい修正候補を返す。
+- 各項目について、研究を進めるうえでの曖昧さや欠落を指摘し、具体化した修正候補を返す。
 - feedback は短く具体的に書く。
-- revision_candidate は、元の意図をできるだけ保ちながら、学術文脈で自然な 1 文に整える。
+- revision_candidate は必ず一文だけにし、一つの研究上の判断だけを表す。
+- revision_candidate は、元の意図を保ちながら、主語・対象・判断が分かる簡潔な文にする。
+- 複数の主張を接続詞や読点で無理に連結した長い一文にしない。
 - revised_title は簡潔で、焦点と貢献が伝わるものにする。
 - revised_abstract は必ず 1 段落の連続した本文にする。
 - revised_abstract に見出し、項目名、ラベル、箇条書き、番号付け、項目ごとの改行を入れない。
@@ -416,7 +418,7 @@ def build_generation_prompt(request_data: GenerationRequest, guidance_text: str)
 - revised_abstract では、入力にない実験結果や数値を捏造せず、不足情報は断定的に作り足さない。
 - keywords は 3 件から 6 件返す。
 - overall_notes には、全体として直すとよい点を返す。
-- next_steps には、次に埋めると完成度が上がる情報を返す。不要なら空配列でよい。
+- next_steps には、研究を実際に始めるために次に決めること、調べること、試すことを具体的な作業として返す。不要なら空配列でよい。
 - section_feedback には、入力項目のうち内容があるものを順番通り返す。
 - evaluation には、下記 10 項目をこの順番どおり必ず入れる。
 - evaluation.score は 0 から 10 の整数にする。
@@ -436,7 +438,7 @@ def build_generation_prompt(request_data: GenerationRequest, guidance_text: str)
 - 入力に内容がある項目まで、機械的にすべて 0 点や 1 点へそろえない。
 - すべての評価項目が本当に同程度に弱いと判断できる場合を除き、evaluation.score を一律同点にしない。
 - section_updates には、10 項目すべてについて改善後の入力案を順番どおり返す。
-- section_updates.suggested_text は、その項目の入力欄にそのまま戻せる短い学術文にする。
+- section_updates.suggested_text は、その項目の入力欄にそのまま戻せる、研究上の判断を一つだけ含む一文にする。
 - section_updates.reason には、その修正案で何を補強したかを短く書く。
 - section_updates では、各項目に別項目の内容を混ぜない。
 
@@ -487,6 +489,39 @@ section_updates の対象項目と制約:
 入力状況:
 - 10 項目中 {filled_section_count} 項目に内容がある。
 - 空欄の項目は低めに評価してよいが、内容がある項目は記述の具体性に応じて段階的に採点する。
+
+入力項目:
+{section_list_text}
+""".strip()
+
+
+def build_compass_prompt(request_data: GenerationRequest) -> str:
+    language_label = "日本語" if request_data.target_language == "ja" else "English"
+    section_list_text = "\n".join(
+        f"- {label}: {getattr(request_data, field_name) or '未入力'}"
+        for field_name, label in SECTION_DEFINITIONS
+    )
+    return f"""
+あなたは研究アイデアを実行可能な計画へ先鋭化する研究構想アシスタントです。
+入力全体を横断して分析し、研究の核と次の行動を明確にしてください。
+出力は必ず {language_label} の妥当な JSON のみにしてください。
+
+制約:
+- 入力にない事実、数値、結果を追加しない。
+- research_pitch は「誰または何の、どんな問題を、どの核となる方法で解き、何によって成功を確かめるか」が伝わる一文にする。
+- core_hypothesis は、この研究で検証する中心的な仮説を一文にする。入力から仮説を特定できない場合は、何を決める必要があるかを書く。
+- critical_gap は、研究を実行に移すうえで最も重要な未決定事項を一つだけ、一文で指摘する。
+- next_action は、資料を調べる、データを用意する、実装する、比較するなど、直ちに着手できる具体的作業を一つだけ、一文で示す。
+- 一般的な助言や文章表現へのコメントは書かない。
+- 各値は一文だけにし、複数の論点を列挙しない。
+
+JSON format:
+{{
+  "research_pitch": "string",
+  "core_hypothesis": "string",
+  "critical_gap": "string",
+  "next_action": "string"
+}}
 
 入力項目:
 {section_list_text}
@@ -576,8 +611,8 @@ def build_section_revision_prompt(request_data: GenerationRequest, field_name: s
 - 結論だけでは貢献を確定しにくい場合でも、結論と他項目から最も妥当な貢献を 1 つ補って返す。
 """.strip()
     return f"""
-あなたは研究支援に強いアカデミック・ライティングアシスタントです。
-目的は、論文アブストラクト構成要素の 1 項目だけを推敲することです。
+あなたは、研究アイデアを実行可能な計画へ具体化する研究構想アシスタントです。
+目的は、アブストラクト構成要素の 1 項目について曖昧さを見つけ、研究を前へ進められる粒度まで具体化することです。文章表現の指導だけを目的にしません。
 
 出力は必ず妥当な JSON のみとし、Markdown のコードフェンスや余計な説明は含めないでください。
 
@@ -590,8 +625,9 @@ def build_section_revision_prompt(request_data: GenerationRequest, field_name: s
 
 重要な制約:
 - 与えられていない実験結果、数値、評価指標、データセット名を捏造しない。
-- フィードバックは短く具体的に書く。
-- 修正候補は 1 文から 2 文の自然な学術文にする。
+- フィードバックは、表現上の巧拙よりも、研究内容として未決定・曖昧な点を短く具体的に書く。
+- 修正候補は必ず一文だけにし、一つの研究上の判断だけを表す。
+- 複数の主張を接続詞や読点で無理に連結した長い一文にしない。
 - 修正候補は元の意図をできるだけ保つ。
 - 今回は「{section_label}」だけを出力対象にする。
 - {excluded_sections} の内容は書かない。
@@ -645,8 +681,8 @@ def build_evaluation_prompt(request_data: GenerationRequest, revised_title: str,
         for item in EVALUATION_CRITERIA
     )
     return f"""
-あなたは研究支援に強いアカデミック・ライティングアシスタントです。
-目的は、入力項目をもとに生成された論文タイトルとアブストラクトの完成度を評価することです。
+あなたは研究アイデアの具体化を支援する研究構想アシスタントです。
+目的は、入力項目をもとに生成された研究タイトルとアブストラクトが、研究を進める指針として具体的かつ一貫しているかを確認することです。
 
 出力は必ず妥当な JSON のみとし、Markdown のコードフェンスや余計な説明は含めないでください。
 
@@ -1143,9 +1179,13 @@ def revise_section_openrouter(
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
         "temperature": 0.35,
+        "response_format": {"type": "json_object"},
+        "reasoning": {"effort": "low", "exclude": True},
+        "max_tokens": 2600,
     }
     try:
-        with httpx.Client(timeout=httpx.Timeout(connect=30, read=REQUEST_TIMEOUT, write=30, pool=10)) as client:
+        section_timeout = min(60, REQUEST_TIMEOUT)
+        with httpx.Client(timeout=httpx.Timeout(connect=20, read=section_timeout, write=20, pool=10)) as client:
             response = client.post(f"{_OPENROUTER_BASE}/chat/completions", json=payload, headers=headers)
             response.raise_for_status()
     except httpx.HTTPError as exc:
@@ -1182,6 +1222,55 @@ def revise_section_ollama(
 
     parsed = parse_json_response((response.json().get("response") or "").strip())
     return normalize_section_revision(parsed, field_name, getattr(request_data, field_name))
+
+
+def generate_compass_openrouter(request_data: GenerationRequest, api_key: str) -> tuple[dict[str, str], str | None]:
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "http://localhost:8000",
+        "X-Title": "BuildAbstract",
+    }
+    payload = {
+        "model": OPENROUTER_MODEL,
+        "messages": [{"role": "user", "content": build_compass_prompt(request_data)}],
+        "stream": False,
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"},
+        "reasoning": {"effort": "low", "exclude": True},
+        "max_tokens": 2400,
+    }
+    try:
+        compass_timeout = min(60, REQUEST_TIMEOUT)
+        with httpx.Client(timeout=httpx.Timeout(connect=20, read=compass_timeout, write=20, pool=10)) as client:
+            response = client.post(f"{_OPENROUTER_BASE}/chat/completions", json=payload, headers=headers)
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail=f"研究コンパスの生成に失敗しました: {exc}") from exc
+    response_json = response.json()
+    content = (((response_json.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+    return normalize_compass(parse_json_response(content)), response_json.get("id")
+
+
+def generate_compass_ollama(request_data: GenerationRequest, ollama_url: str) -> dict[str, str]:
+    payload = {
+        "model": request_data.model,
+        "prompt": build_compass_prompt(request_data),
+        "stream": False,
+        "options": {"temperature": 0.2},
+    }
+    try:
+        with httpx.Client(timeout=httpx.Timeout(connect=30, read=REQUEST_TIMEOUT, write=30, pool=10)) as client:
+            response = client.post(f"{ollama_url}/api/generate", json=payload)
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail=f"研究コンパスの生成に失敗しました: {exc}") from exc
+    return normalize_compass(parse_json_response((response.json().get("response") or "").strip()))
+
+
+def normalize_compass(raw_result: dict[str, Any]) -> dict[str, str]:
+    keys = ("research_pitch", "core_hypothesis", "critical_gap", "next_action")
+    return {key: str(raw_result.get(key, "")).strip() for key in keys}
 
 
 def save_generation(
@@ -1407,7 +1496,7 @@ def build_generation_markdown(record: dict[str, Any]) -> str:
     pass_threshold = float(result.get("pass_threshold", PASS_THRESHOLD) or PASS_THRESHOLD)
     section_updates = result.get("section_updates", [])
     lines = [
-        f"# {record['research_topic']} 推敲結果",
+        f"# {record['research_topic']} 研究構想",
         "",
         "## 基本情報",
         f"- 生成ID: {record['id']}",
@@ -1442,7 +1531,7 @@ def build_generation_markdown(record: dict[str, Any]) -> str:
 
     lines.extend(
         [
-            "## 改稿アブストラクト",
+            "## 研究を進めるためのアブストラクト",
             result.get("revised_abstract", "") or "生成なし",
             "",
             "## アブストラクトへのコメント",
@@ -1510,7 +1599,7 @@ def build_generation_markdown(record: dict[str, Any]) -> str:
             f"- 結論: {request_payload.get('conclusion') or '未入力'}",
             f"- 貢献: {request_payload.get('contribution') or record['key_points'] or '未入力'}",
             "",
-            "## 推敲ガイド",
+            "## 生成ガイド",
             record["guidance_text"],
         ]
     )
@@ -1647,7 +1736,7 @@ def process_generation_job(
         update_job(job_id, status="processing", progress=10, stage="入力内容を確認しています。")
         update_job(job_id, progress=25, stage="フォーム入力を整理しています。")
 
-        update_job(job_id, progress=40, stage="推敲ガイドを読み込んでいます。")
+        update_job(job_id, progress=40, stage="研究構想の生成ガイドを読み込んでいます。")
         guidance_text = load_guidance()
 
         request_data = GenerationRequest(
@@ -1707,7 +1796,7 @@ def process_generation_job(
         if result is None:
             raise last_exc or HTTPException(status_code=503, detail="推敲に失敗しました。")
 
-        update_job(job_id, progress=88, stage="推敲結果を整形しています。")
+        update_job(job_id, progress=88, stage="研究構想の生成結果を整形しています。")
         generation_id = save_generation(fixed_request, guidance_text, result, cost_usd=cost_usd)
         log_cost("generation", cost_usd)
         final_llm_output = _llm_stream.pop(job_id, "")
@@ -1758,6 +1847,7 @@ def index(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request=request,
         name="index.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
         context={
             "default_model": model_for_backend(current_backend()),
             "default_backend": current_backend(),
@@ -1909,6 +1999,50 @@ def revise_section(
     ollama_url = _ollama_pool.get()
     try:
         return revise_section_ollama(request_data, field_name, guidance_text, ollama_url)
+    finally:
+        _ollama_pool.put(ollama_url)
+
+
+@app.post("/api/research-compass")
+def research_compass(
+    background_tasks: BackgroundTasks,
+    backend: str = Form(""),
+    target_language: str = Form("ja"),
+    background: str = Form(""),
+    problem: str = Form(""),
+    objective: str = Form(""),
+    challenge: str = Form(""),
+    methods: str = Form(""),
+    experiment: str = Form(""),
+    expected_results: str = Form(""),
+    discussion: str = Form(""),
+    conclusion: str = Form(""),
+    contribution: str = Form(""),
+    model: str = Form(DEFAULT_MODEL),
+) -> dict[str, str]:
+    backend_name = resolve_backend_choice(backend)
+    request_data = GenerationRequest(
+        target_language=target_language.strip() or "ja",
+        background=background.strip(), problem=problem.strip(), objective=objective.strip(),
+        challenge=challenge.strip(), methods=methods.strip(), experiment=experiment.strip(),
+        expected_results=expected_results.strip(), discussion=discussion.strip(),
+        conclusion=conclusion.strip(), contribution=contribution.strip(),
+        model=model_for_backend(backend_name),
+    )
+    if sum(bool(getattr(request_data, name).strip()) for name, _ in SECTION_DEFINITIONS) < 3:
+        raise HTTPException(status_code=400, detail="研究コンパスには少なくとも3項目を入力してください。")
+    if backend_name == "openrouter":
+        api_key = _openrouter_pool.get()
+        try:
+            result, generation_id = generate_compass_openrouter(request_data, api_key)
+            if generation_id:
+                background_tasks.add_task(fetch_and_log_cost, generation_id, api_key, "research-compass")
+            return result
+        finally:
+            _openrouter_pool.put(api_key)
+    ollama_url = _ollama_pool.get()
+    try:
+        return generate_compass_ollama(request_data, ollama_url)
     finally:
         _ollama_pool.put(ollama_url)
 
