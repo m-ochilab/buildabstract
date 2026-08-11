@@ -8,9 +8,11 @@ import sqlite3
 import subprocess
 import time
 import traceback
+import uuid
+import csv
 from contextlib import closing
 from datetime import datetime, timezone
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +20,7 @@ import httpx
 from docx import Document
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -166,6 +168,26 @@ class GenerationRequest(BaseModel):
     model: str = Field(DEFAULT_MODEL, min_length=1)
 
 
+class StudySessionStart(BaseModel):
+    participant_code: str = Field(..., min_length=2, max_length=80)
+    research_type: str = Field("", max_length=120)
+    research_stage: str = Field("", max_length=120)
+
+
+class StudyEvent(BaseModel):
+    session_id: str = Field(..., min_length=1, max_length=64)
+    event_type: str = Field(..., min_length=1, max_length=80)
+    field_name: str = Field("", max_length=80)
+    candidate_id: str = Field("", max_length=80)
+    before_text: str = Field("", max_length=5000)
+    after_text: str = Field("", max_length=5000)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class StudySessionComplete(BaseModel):
+    generation_id: int | None = None
+
+
 DEFAULT_ACADEMIC_FIELD = "情報工学全般（AI・データサイエンスを含む）"
 DEFAULT_PAPER_TYPE = "journal article"
 DEFAULT_TARGET_AUDIENCE = "学会査読者"
@@ -175,7 +197,7 @@ SECTION_DEFINITIONS: list[tuple[str, str]] = [
     ("objective", "この論文での目的"),
     ("challenge", "目的達成のために解決すべき課題"),
     ("methods", "方法"),
-    ("experiment", "実験"),
+    ("experiment", "評価・検証"),
     ("expected_results", "想定される結果"),
     ("discussion", "課題が解決されているかの考察"),
     ("conclusion", "結論"),
@@ -188,7 +210,7 @@ SECTION_UPDATE_SCOPE_RULES: dict[str, str] = {
     "objective": "この論文での目的だけを書く。課題や方法の具体的内容は入れない。",
     "challenge": "解決すべき課題だけを書く。具体的な方法や実験計画は入れない。",
     "methods": "方法だけを書く。実験条件や期待結果は入れない。",
-    "experiment": "実験設計だけを書く。結果や考察は入れない。",
+    "experiment": "評価・検証の設計だけを書く。結果や考察は入れない。",
     "expected_results": "想定される結果だけを書く。考察や結論は入れない。",
     "discussion": "考察だけを書く。結論や貢献の断定までは入れない。",
     "conclusion": "結論だけを書く。貢献の詳述は入れない。",
@@ -200,13 +222,14 @@ EVALUATION_CRITERIA: list[dict[str, str]] = [
     {"key": "objective", "label": "目的の具体性", "short": "目的"},
     {"key": "challenge", "label": "課題の具体性", "short": "課題"},
     {"key": "methods", "label": "方法の具体性", "short": "方法"},
-    {"key": "experiment", "label": "実験の具体性", "short": "実験"},
+    {"key": "experiment", "label": "評価・検証の具体性", "short": "検証"},
     {"key": "expected_results", "label": "結果の定量性", "short": "結果"},
     {"key": "discussion", "label": "考察の具体性", "short": "考察"},
     {"key": "conclusion", "label": "結論の具体性", "short": "結論"},
     {"key": "contribution", "label": "貢献の具体性", "short": "貢献"},
 ]
 EVALUATION_LABELS = {item["key"]: item["label"] for item in EVALUATION_CRITERIA}
+CONDITION_SEQUENCES = (("A", "B", "C"), ("B", "C", "A"), ("C", "A", "B"))
 
 
 def init_db() -> None:
@@ -268,6 +291,47 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 source TEXT NOT NULL,
                 cost_usd REAL NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS study_participants (
+                participant_code TEXT PRIMARY KEY,
+                sequence_index INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS study_sessions (
+                id TEXT PRIMARY KEY,
+                participant_code TEXT NOT NULL,
+                sequence_index INTEGER NOT NULL,
+                condition_code TEXT NOT NULL,
+                research_type TEXT NOT NULL,
+                research_stage TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                generation_id INTEGER,
+                FOREIGN KEY(participant_code) REFERENCES study_participants(participant_code)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS study_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                field_name TEXT NOT NULL,
+                candidate_id TEXT NOT NULL,
+                before_text TEXT NOT NULL,
+                after_text TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                FOREIGN KEY(session_id) REFERENCES study_sessions(id)
             )
             """
         )
@@ -1918,6 +1982,155 @@ def recent_generations() -> list[dict[str, Any]]:
     return list_recent_generations()
 
 
+@app.post("/api/study/sessions")
+def start_study_session(request: StudySessionStart) -> dict[str, Any]:
+    """Allocate the next condition using one of three Latin-square orders."""
+    participant_code = request.participant_code.strip()
+    now = datetime.now(timezone.utc).isoformat()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.row_factory = sqlite3.Row
+        participant = conn.execute(
+            "SELECT sequence_index FROM study_participants WHERE participant_code = ?", (participant_code,)
+        ).fetchone()
+        if participant is None:
+            sequence_index = conn.execute("SELECT COUNT(*) AS count FROM study_participants").fetchone()["count"] % 3
+            conn.execute(
+                "INSERT INTO study_participants (participant_code, sequence_index, created_at) VALUES (?, ?, ?)",
+                (participant_code, sequence_index, now),
+            )
+        else:
+            sequence_index = int(participant["sequence_index"])
+
+        active = conn.execute(
+            "SELECT * FROM study_sessions WHERE participant_code = ? AND completed_at IS NULL ORDER BY started_at DESC LIMIT 1",
+            (participant_code,),
+        ).fetchone()
+        if active is not None:
+            return {**dict(active), "condition_label": condition_label(active["condition_code"])}
+
+        completed = conn.execute(
+            "SELECT COUNT(*) AS count FROM study_sessions WHERE participant_code = ? AND completed_at IS NOT NULL",
+            (participant_code,),
+        ).fetchone()["count"]
+        if completed >= 3:
+            raise HTTPException(status_code=400, detail="この参加者は3条件を完了しています。")
+        condition_code = CONDITION_SEQUENCES[sequence_index][completed]
+        session_id = uuid.uuid4().hex
+        conn.execute(
+            """INSERT INTO study_sessions
+               (id, participant_code, sequence_index, condition_code, research_type, research_stage, started_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (session_id, participant_code, sequence_index, condition_code,
+             request.research_type.strip(), request.research_stage.strip(), now),
+        )
+        conn.commit()
+    return {
+        "id": session_id, "participant_code": participant_code, "sequence_index": sequence_index,
+        "condition_code": condition_code, "condition_label": condition_label(condition_code),
+        "research_type": request.research_type.strip(), "research_stage": request.research_stage.strip(), "started_at": now,
+    }
+
+
+def condition_label(code: str) -> str:
+    return {"A": "A: 一括生成", "B": "B: 10項目入力のみ", "C": "C: 本方式（項目別AI支援）"}.get(code, code)
+
+
+@app.post("/api/study/events")
+def log_study_event(event: StudyEvent) -> dict[str, bool]:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        exists = conn.execute("SELECT 1 FROM study_sessions WHERE id = ?", (event.session_id,)).fetchone()
+        if exists is None:
+            raise HTTPException(status_code=404, detail="実験セッションが見つかりません。")
+        conn.execute(
+            """INSERT INTO study_events
+               (session_id, created_at, event_type, field_name, candidate_id, before_text, after_text, payload_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (event.session_id, datetime.now(timezone.utc).isoformat(), event.event_type,
+             event.field_name, event.candidate_id, event.before_text, event.after_text,
+             json.dumps(event.payload, ensure_ascii=False)),
+        )
+        conn.commit()
+    return {"ok": True}
+
+
+@app.post("/api/study/sessions/{session_id}/complete")
+def complete_study_session(session_id: str, request: StudySessionComplete) -> dict[str, bool]:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        cursor = conn.execute(
+            "UPDATE study_sessions SET completed_at = ?, generation_id = ? WHERE id = ? AND completed_at IS NULL",
+            (datetime.now(timezone.utc).isoformat(), request.generation_id, session_id),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="未完了の実験セッションが見つかりません。")
+        conn.commit()
+    return {"ok": True}
+
+
+@app.get("/api/study/export.csv")
+def export_study_csv() -> Response:
+    """Researcher export: participant codes only; no names are included."""
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """SELECT s.id AS session_id, s.participant_code, s.sequence_index, s.condition_code,
+                      s.research_type, s.research_stage, s.started_at, s.completed_at, s.generation_id,
+                      e.created_at AS event_at, e.event_type, e.field_name, e.candidate_id,
+                      e.before_text, e.after_text, e.payload_json
+               FROM study_sessions s LEFT JOIN study_events e ON e.session_id = s.id
+               ORDER BY s.started_at, e.id"""
+        ).fetchall()
+    output = StringIO()
+    writer = csv.DictWriter(output, fieldnames=list(rows[0].keys()) if rows else ["session_id"])
+    writer.writeheader()
+    writer.writerows(dict(row) for row in rows)
+    return Response(output.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="buildabstract-study-log.csv"'})
+
+
+@app.get("/api/study/summary")
+def study_summary() -> dict[str, Any]:
+    """Directly measurable outcomes for the three evaluation conditions."""
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.row_factory = sqlite3.Row
+        sessions = conn.execute(
+            """SELECT condition_code, started_at, completed_at FROM study_sessions
+               WHERE completed_at IS NOT NULL"""
+        ).fetchall()
+        events = conn.execute(
+            """SELECT s.condition_code, e.event_type, e.before_text, e.after_text
+               FROM study_events e JOIN study_sessions s ON s.id = e.session_id"""
+        ).fetchall()
+    summary: dict[str, dict[str, Any]] = {
+        code: {"condition": condition_label(code), "completed_sessions": 0, "candidates_presented": 0,
+               "candidates_adopted": 0, "candidates_rejected": 0, "edit_characters": 0, "mean_duration_seconds": None}
+        for code in ("A", "B", "C")
+    }
+    durations: dict[str, list[float]] = {code: [] for code in summary}
+    for row in sessions:
+        code = row["condition_code"]
+        summary[code]["completed_sessions"] += 1
+        try:
+            durations[code].append((datetime.fromisoformat(row["completed_at"]) - datetime.fromisoformat(row["started_at"])).total_seconds())
+        except (TypeError, ValueError):
+            pass
+    for row in events:
+        item = summary[row["condition_code"]]
+        if row["event_type"] == "candidate_presented":
+            item["candidates_presented"] += 1
+        elif row["event_type"] == "candidate_adopted":
+            item["candidates_adopted"] += 1
+        elif row["event_type"] == "candidate_rejected":
+            item["candidates_rejected"] += 1
+        if row["event_type"] in {"field_edited", "candidate_adopted"}:
+            item["edit_characters"] += abs(len(row["after_text"] or "") - len(row["before_text"] or ""))
+    for code, item in summary.items():
+        presented = item["candidates_presented"]
+        item["adoption_rate"] = round(item["candidates_adopted"] / presented, 4) if presented else None
+        if durations[code]:
+            item["mean_duration_seconds"] = round(sum(durations[code]) / len(durations[code]), 1)
+    return {"conditions": list(summary.values())}
+
+
 @app.get("/api/generations/jobs/{job_id}")
 def generation_job_status(job_id: int) -> dict[str, Any]:
     return get_job(job_id)
@@ -2118,6 +2331,7 @@ async def create_generation(
     last_name: str = Form(""),
     first_name: str = Form(""),
     target_language: str = Form("ja"),
+    bulk_input: str = Form(""),
     background: str = Form(""),
     problem: str = Form(""),
     objective: str = Form(""),
@@ -2134,6 +2348,10 @@ async def create_generation(
     full_name = f"{last_name.strip()}{first_name.strip()}"
     if not full_name:
         raise HTTPException(status_code=400, detail="姓と名を入力してください。")
+    # Condition A supplies one consolidated research plan.  Preserve it as the
+    # source context rather than pretending it was an item-by-item response.
+    if bulk_input.strip() and not any((background, problem, objective, challenge, methods, experiment, expected_results, discussion, conclusion, contribution)):
+        background = bulk_input.strip()
     payload_values = [
         background.strip(),
         problem.strip(),

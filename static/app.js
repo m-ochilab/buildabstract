@@ -31,13 +31,20 @@ const writingClubAction = document.getElementById("writing-club-action");
 const writingClubButton = document.getElementById("writing-club-button");
 const writingClubStatus = document.getElementById("writing-club-status");
 const sectionButtons = Array.from(document.querySelectorAll(".section-generate-btn"));
+const studyStartButton = document.getElementById("study-start-button");
+const studyCompleteButton = document.getElementById("study-complete-button");
+const studyCondition = document.getElementById("study-condition");
+const studyStatus = document.getElementById("study-status");
+const participantCodeInput = document.getElementById("participant-code");
+const researchTypeInput = document.getElementById("research-type");
+const researchStageInput = document.getElementById("research-stage");
 const SECTION_LABELS = {
   background: "背景",
   problem: "問題",
   objective: "この研究で到達したい状態",
   challenge: "目的達成のために解決すべき課題",
   methods: "方法",
-  experiment: "検証と具体的な作業",
+  experiment: "評価・検証と具体的な作業",
   expected_results: "想定される結果",
   discussion: "課題が解決されているかの考察",
   conclusion: "結論",
@@ -49,7 +56,7 @@ const EVALUATION_META = [
   { key: "objective", label: "目的の具体性", short: "目的" },
   { key: "challenge", label: "課題の具体性", short: "課題" },
   { key: "methods", label: "方法の具体性", short: "方法" },
-  { key: "experiment", label: "実験の具体性", short: "実験" },
+  { key: "experiment", label: "評価・検証の具体性", short: "検証" },
   { key: "expected_results", label: "結果の定量性", short: "結果" },
   { key: "discussion", label: "考察の具体性", short: "考察" },
   { key: "conclusion", label: "結論の具体性", short: "結論" },
@@ -74,6 +81,7 @@ let timeoutSeconds = 300;
 let synologyChatConfigured = null; // null = /api/health からの確認がまだ済んでいない
 let latestGenerationId = null;
 let latestPassAll = false;
+let studySession = null;
 let availableBackends = {
   openrouter: { configured: false, model: "未設定" },
   ollama: { configured: true, model: "取得中..." },
@@ -86,6 +94,30 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function logStudyEvent(eventType, details = {}) {
+  if (!studySession) return;
+  fetch("/api/study/events", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: studySession.id, event_type: eventType, ...details }),
+  }).catch(() => {
+    // Logging must never interrupt a participant's work.
+  });
+}
+
+function applyStudyCondition(code) {
+  // A is one-shot generation; B is intentionally item-input-only; C exposes the per-item AI workflow.
+  const bulkMode = code === "A";
+  const inputOnly = code === "B";
+  document.getElementById("bulk-input-section")?.classList.toggle("hidden", !bulkMode);
+  document.querySelectorAll(".input-section:not(#bulk-input-section), .phase-heading").forEach((element) => {
+    element.classList.toggle("hidden", bulkMode);
+  });
+  sectionButtons.forEach((button) => {
+    button.closest(".section-actions")?.classList.toggle("hidden", inputOnly || bulkMode);
+  });
 }
 
 async function fetchJson(url, options = {}) {
@@ -237,6 +269,13 @@ function renderInlineSectionResult(payload) {
   const textarea = form.elements.namedItem(payload.field_name);
   const originalText = payload.input_text || "";
   const revisedText = payload.revision_candidate || "";
+  const candidateId = crypto.randomUUID();
+  logStudyEvent("candidate_presented", {
+    field_name: payload.field_name,
+    candidate_id: candidateId,
+    before_text: originalText,
+    after_text: revisedText,
+  });
   target.classList.remove("hidden");
   target.innerHTML = `
     <article class="feedback-card inline">
@@ -281,6 +320,12 @@ function renderInlineSectionResult(payload) {
     if (unlockButton) {
       unlockButton.classList.remove("hidden");
     }
+    logStudyEvent(selectedValue === "revised" ? "candidate_adopted" : "candidate_rejected", {
+      field_name: payload.field_name,
+      candidate_id: candidateId,
+      before_text: originalText,
+      after_text: textarea.value,
+    });
   };
 
   radios.forEach((radio) => {
@@ -301,6 +346,7 @@ function renderInlineSectionResult(payload) {
         radio.checked = false;
       });
       unlockButton.classList.add("hidden");
+      logStudyEvent("field_unlocked", { field_name: payload.field_name, candidate_id: candidateId, before_text: textarea?.value || "" });
     });
   }
 
@@ -673,6 +719,7 @@ function renderResult(payload) {
 
   resultEmpty.classList.add("hidden");
   resultView.classList.remove("hidden");
+  logStudyEvent("generation_completed", { payload: { generation_id: payload.id } });
 }
 
 async function pollJob(jobId) {
@@ -778,6 +825,7 @@ sectionButtons.forEach((button) => {
       resultTarget.innerHTML = '<p class="section-waiting">Gemini 2.5 Pro が研究内容を分析しています。通常は30秒前後かかります。</p>';
     }
     setSectionButtonLoading(button, true);
+    logStudyEvent("revision_requested", { field_name: fieldName, before_text: formData.get(fieldName) || "" });
     const elapsedTimer = window.setInterval(() => {
       elapsedSeconds += 1;
       button.textContent = `分析中 ${elapsedSeconds}秒`;
@@ -819,6 +867,9 @@ form.addEventListener("submit", async (event) => {
   setRescoreStatus("");
 
   const formData = new FormData(form);
+  logStudyEvent("generation_requested", {
+    payload: Object.fromEntries(Array.from(formData.entries()).filter(([key]) => key !== "last_name" && key !== "first_name")),
+  });
 
   try {
     const job = await fetchJson("/api/generations", {
@@ -833,6 +884,60 @@ form.addEventListener("submit", async (event) => {
     setLoadingState(false);
   }
 });
+
+Array.from(form.querySelectorAll("textarea")).forEach((textarea) => {
+  let initialValue = textarea.value;
+  textarea.addEventListener("focus", () => { initialValue = textarea.value; });
+  textarea.addEventListener("blur", () => {
+    if (textarea.value !== initialValue) {
+      logStudyEvent("field_edited", { field_name: textarea.name, before_text: initialValue, after_text: textarea.value });
+    }
+  });
+});
+
+if (studyStartButton) {
+  studyStartButton.addEventListener("click", async () => {
+    const participantCode = participantCodeInput?.value.trim();
+    if (!participantCode) {
+      studyStatus.textContent = "匿名参加者IDを入力してください。";
+      return;
+    }
+    studyStartButton.disabled = true;
+    try {
+      studySession = await fetchJson("/api/study/sessions", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ participant_code: participantCode, research_type: researchTypeInput?.value || "", research_stage: researchStageInput?.value || "" }),
+      });
+      studyCondition.textContent = studySession.condition_label;
+      studyStatus.textContent = "このセッションの操作ログを保存しています。終了時に「この条件を終了」を押してください。";
+      studyCompleteButton?.classList.remove("hidden");
+      applyStudyCondition(studySession.condition_code);
+      logStudyEvent("session_started");
+    } catch (error) {
+      studyStatus.textContent = `開始できませんでした: ${error.message}`;
+      studyStartButton.disabled = false;
+    }
+  });
+}
+
+if (studyCompleteButton) {
+  studyCompleteButton.addEventListener("click", async () => {
+    if (!studySession) return;
+    try {
+      await fetchJson(`/api/study/sessions/${studySession.id}/complete`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ generation_id: latestGenerationId }),
+      });
+      studyStatus.textContent = "この条件を終了しました。次回は同じ参加者IDで開始すると次の条件が割り当てられます。";
+      studyCompleteButton.classList.add("hidden");
+      studyStartButton.disabled = false;
+      studySession = null;
+      applyStudyCondition("C");
+    } catch (error) {
+      studyStatus.textContent = `終了処理に失敗しました: ${error.message}`;
+    }
+  });
+}
 
 if (applyAllUpdatesButton) {
   applyAllUpdatesButton.addEventListener("click", () => {

@@ -15,6 +15,10 @@
         <p class="lead">
           研究アイデアの各要素を一文に絞り、課題・目的・方法・検証を具体化して、実際の研究を進める指針となるアブストラクトへつなげます。
         </p>
+        <aside class="study-notice">
+          <strong>研究評価へのご協力について</strong>
+          <p>同意をいただいた参加者について、匿名の参加者ID、研究類型・段階、入力・候補・採用／編集／棄却、修正前後、操作時刻と所要時間を研究評価のために保存します。氏名は評価ログに含めません。</p>
+        </aside>
         <p class="version-tag">Version: {{ app_version }}</p>
         <div class="status-panel">
           <div>
@@ -46,6 +50,17 @@
           <form id="generation-form" class="form">
             <input type="hidden" name="model" value="{{ default_model }}" />
 
+            <section class="study-panel" id="study-panel">
+              <div><span class="eyebrow">評価実験</span><h3>実験セッションを開始</h3><p>参加者ごとに A・B・C の順序を均衡化して割り当てます。</p></div>
+              <div class="inline-fields">
+                <label><span>匿名参加者ID</span><input id="participant-code" type="text" placeholder="P001" /></label>
+                <label><span>研究類型</span><select id="research-type"><option value="">選択してください</option><option>基礎研究</option><option>応用研究</option><option>開発研究</option><option>その他</option></select></label>
+                <label><span>研究段階</span><select id="research-stage"><option value="">選択してください</option><option>着想</option><option>計画</option><option>実施中</option><option>執筆</option></select></label>
+              </div>
+              <div class="study-actions"><button type="button" id="study-start-button" class="secondary-btn">この条件を開始</button><strong id="study-condition">通常利用（ログなし）</strong><button type="button" id="study-complete-button" class="secondary-btn hidden">この条件を終了</button></div>
+              <p id="study-status" class="compass-status"></p>
+            </section>
+
             <div class="inline-fields">
               <label>
                 <span>姓</span>
@@ -74,7 +89,15 @@
               </label>
             </div>
 
-            <div class="phase-heading"><span>01</span><div><strong>問いを定める</strong><p>なぜ取り組むのか、何を解くのかを切り分けます。</p></div></div>
+            <section id="bulk-input-section" class="input-section hidden">
+              <label>
+                <span>研究構想をまとめて入力</span>
+                <textarea name="bulk_input" rows="10" placeholder="背景、問題、目的、方法、評価・検証したいことを、箇条書きや文章でまとめて入力してください。"></textarea>
+              </label>
+              <p class="compass-status">条件Aでは項目別の支援を行わず、この入力から一括でアブストラクトを生成します。</p>
+            </section>
+
+            <div class="phase-heading study-item-input"><span>01</span><div><strong>問いを定める</strong><p>なぜ取り組むのか、何を解くのかを切り分けます。</p></div></div>
 
             <section class="input-section" data-field="background">
               <label>

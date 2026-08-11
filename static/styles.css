@@ -969,6 +969,44 @@ button:disabled {
   background: rgba(255, 253, 250, 0.92);
 }
 
+.study-notice,
+.study-panel {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border: 1px solid rgba(84, 102, 145, 0.24);
+  border-radius: 14px;
+  background: rgba(244, 247, 255, 0.72);
+}
+
+.study-notice strong,
+.study-panel h3 {
+  display: block;
+  margin: 0 0 6px;
+}
+
+.study-notice p,
+.study-panel p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.study-panel {
+  margin-top: 0;
+}
+
+.study-panel .inline-fields {
+  margin-top: 14px;
+}
+
+.study-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
 @media (max-width: 920px) {
   .grid {
     grid-template-columns: 1fr;
