@@ -1,0 +1,52 @@
+{
+  "format_version": 2,
+  "_instructions": [
+    "draft内の空文字列を記入し、保存したJSONを画面の「JSONから読み込む」または「読込」で取り込んでください。",
+    "未定の項目は空欄のままで構いません。research.keywordsにキーワードだけ記入して始められます。",
+    "inputsの各項目は1〜2文・35〜50文字程度が目安です。必要な条件や留保は残してください。",
+    "target_languageは日本語ならja、英語ならen。stageはunknown（不明）、idea（着想）、plan（計画あり）、investigating（調査・実験中）、results（結果あり）から選んでください。",
+    "titleは管理用タイトル、revised_titleとrevised_abstractは作成済みの場合のみ記入してください。",
+    "research.resourcesは利用できるデータ・機器等、research.research_typeは研究の種類です。いずれも任意です。",
+    "format_version・version・schema_versionは変更せず、sourcesは空配列のままにしてください。文献と根拠の詳細は取り込み後に画面で登録できます。",
+    "_instructionsと_section_labelsは説明用で、原稿には取り込まれません。"
+  ],
+  "_section_labels": {
+    "background": "背景",
+    "problem": "問題",
+    "objective": "目的",
+    "challenge": "課題",
+    "methods": "方法",
+    "experiment": "評価・検証",
+    "expected_results": "予想／結果",
+    "discussion": "考察",
+    "conclusion": "結論",
+    "contribution": "貢献"
+  },
+  "draft": {
+    "title": "",
+    "inputs": {
+      "target_language": "ja",
+      "background": "",
+      "problem": "",
+      "objective": "",
+      "challenge": "",
+      "methods": "",
+      "experiment": "",
+      "expected_results": "",
+      "discussion": "",
+      "conclusion": "",
+      "contribution": ""
+    },
+    "revised_title": "",
+    "revised_abstract": "",
+    "version": 0,
+    "research": {
+      "schema_version": 1,
+      "stage": "unknown",
+      "keywords": "",
+      "research_type": "",
+      "resources": ""
+    }
+  },
+  "sources": []
+}
